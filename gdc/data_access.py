@@ -5,6 +5,10 @@ import numpy as np
 
 from gdc.utils import GDC_DATA_PATH
 
+#########################################
+# Step 1 Load Temperatures / find offset
+#########################################
+
 # 30' simulated temperature data - unknown dates
 df_temp_simulated = pd.read_feather(
         path.join(GDC_DATA_PATH, 'simulated', 'temperature_export.feather')
@@ -22,14 +26,22 @@ df_temp_real = ds_temp_real[['time', 'ta']].to_dataframe().reset_index()
 
 # finding offset
 
-centered_df_temp_simulated = df_temp_simulated.mean(axis=0)
-centered_df_temp_simulated -= centered_df_temp_simulated.mean()
-#get even indices only
-centered_df_temp_simulated = centered_df_temp_simulated.T.iloc[::2].reset_index(
-    drop=True).T
+def demean(df):
+    centered_df = df.copy()
+    if isinstance(centered_df, pd.DataFrame):
+        for col in centered_df.columns:
+            centered_df[col] -= centered_df[col].mean()
+        return centered_df
+    else:
+        return centered_df - centered_df.mean()
 
-centered_df_temp_real = df_temp_real.copy()
-centered_df_temp_real['ta'] -= centered_df_temp_real['ta'].mean()
+
+centered_df_temp_simulated = demean(df_temp_simulated.mean(axis=0))
+#get even indices only
+centered_df_temp_simulated = (
+    centered_df_temp_simulated.T.iloc[::2].reset_index(drop=True).T)
+
+centered_df_temp_real = demean(df_temp_real['ta'])
 
 
 def roll(s, k):
@@ -39,7 +51,7 @@ def roll(s, k):
 
 def err_fit(k):
     r = roll(centered_df_temp_simulated, k).reset_index(drop=True)
-    return np.mean(np.abs(r - centered_df_temp_real['ta']))
+    return np.mean(np.abs(r - centered_df_temp_real))
 
 
 ks = list(range(-2500, -1500))
@@ -52,4 +64,50 @@ df_temp_simulated_normalized = roll(
     df_temp_simulated.T.iloc[::2].reset_index(drop=True),
     offset).reset_index(drop=True).T
 
+df_temp_simulated_normalized = df_temp_simulated_normalized.T
+df_temp_simulated_normalized.index = pd.to_datetime(
+    df_temp_real.iloc[:len(df_temp_simulated_normalized)]['time'].values)
 
+df_temp_real.set_index('time', inplace=True)
+
+
+#########################################
+# Step 2 Apply Offset to simulated loads
+#########################################
+
+df_load_simulated = pd.read_feather(
+    path.join(GDC_DATA_PATH, 'simulated', 'load_curve_export.feather')
+)
+df_load_simulated = df_load_simulated.T
+df_load_simulated = df_load_simulated.iloc[::2].reset_index(drop=True)
+df_load_simulated_normalized = roll(df_load_simulated, offset).reset_index(drop=True)
+df_load_simulated.index = pd.to_datetime(
+    df_temp_real.iloc[:len(df_load_simulated)].index.values)
+
+
+df_load_real = pd.read_csv(
+    path.join(GDC_DATA_PATH, 'real', 'demande_rte_2023.csv')
+)
+
+df_load_real = df_load_real.drop(columns=['Périmètre', 'Nature'])
+
+# combine Date and Heures into a proper datetime column
+df_load_real['datetime'] = pd.to_datetime(
+    df_load_real['Date'] + ' ' + df_load_real['Heures'])
+
+# round to the nearest hour (or floor if you prefer)
+df_load_real['datetime'] = df_load_real['datetime'].dt.floor('H')
+
+# group by hour and sum the numeric columns
+df_hourly_load_real = df_load_real.groupby('datetime')[
+    ['Consommation', 'Prévision J-1', 'Prévision J']
+].sum()
+
+
+################################################
+# Step 3 Load simulation labels and real prices
+################################################
+
+df_labels = pd.read_feather(
+    path.join(GDC_DATA_PATH, 'simulated', 'labels_export.feather')
+)
