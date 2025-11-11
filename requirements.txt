@@ -20,3 +20,4 @@ tenacity
 pyarrow
 xarray
 netCDF4
+arch

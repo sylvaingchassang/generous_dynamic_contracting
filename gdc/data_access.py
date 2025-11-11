@@ -77,6 +77,8 @@ df_temp_simulated_normalized.index = pd.to_datetime(
 
 df_temp_real.set_index('time', inplace=True)
 
+df_temp_real.rename(columns={'ta': 'Temp'}, inplace=True)
+
 
 #########################################
 # Step 2 Apply Offset to simulated loads
@@ -110,6 +112,14 @@ df_hourly_load_real = df_load_real.groupby('datetime')[
     ['Consommation', 'Prévision J-1', 'Prévision J']
 ].sum()
 
+df_hourly_load_real.rename(
+    columns={
+        'Prévision J-1': 'Day_Ahead_Pred',
+        'Prévision J': 'Day_Of_Pred'
+    },
+    inplace=True
+)
+
 
 def to_zero_one(df):
     return (df - df.min()) / (df.max() - df.min())
@@ -131,18 +141,43 @@ df_hourly_prices['date'] = pd.to_datetime(df_hourly_prices['Datetime (UTC)'])
 df_hourly_prices = df_hourly_prices.set_index('date')
 df_hourly_prices = df_hourly_prices.loc['2023', ['Price (EUR/MWhe)']]
 
+df_hourly_prices.rename(columns={'Price (EUR/MWhe)': 'Price_EUR_MWh'},
+                        inplace=True)
 
-df_merged_real = df_temp_real[['ta']].join(
+
+df_merged_real = df_temp_real[['Temp']].join(
     df_hourly_load_real['Consommation'], how='inner').join(
     df_hourly_prices, how='inner')
 
 
+df_merged_real['Conso_L1H'] = df_merged_real['Consommation'].shift(1)
+df_merged_real['Conso_L2H'] = df_merged_real['Consommation'].shift(2)
+df_merged_real['Conso_L1D'] = df_merged_real['Consommation'].shift(24)
+df_merged_real['Conso_R1D'] = df_merged_real['Consommation'].rolling(24).mean()
+df_merged_real['Conso_R1W'] = df_merged_real[
+    'Consommation'].rolling(24 * 7).mean()      # 168 hours ago
+df_merged_real['Temp_L1H'] = df_merged_real['Temp'].shift(1)
+df_merged_real['Temp_L2H'] = df_merged_real['Temp'].shift(2)
+df_merged_real['Temp_R1D'] = df_merged_real['Temp'].rolling(24).mean()
+df_merged_real['Temp_R1W'] = df_merged_real['Temp'].rolling(24 * 7).mean()
+df_merged_real['DTemp_2'] = np.square(df_merged_real['Temp'] - 286)
+
+
 class CodeBook:
     cons = 'Consommation'
-    price = 'Price (EUR/MWhe)'
-    day_ahead_predicted_cons = 'Prévision J-1'
-    day_of_predicted_cons = 'Prévision J'
-    temp = 'ta'
+    cons_l1h = 'Conso_L1H'
+    cons_l2h = 'Conso_L2H'
+    cons_r1d = 'Conso_R1D'
+    cons_r1w = 'Conso_R1W'
+    price = 'Price_EUR_MWh'
+    day_ahead_predicted_cons = 'Day_Ahead_Pred'
+    day_of_predicted_cons = 'Day_Of_Pred'
+    temp = 'Temp'
+    temp_l1 = 'Temp_L1H'
+    temp_l2 = 'Temp_L2H'
+    temp_r1d = 'Temp_R1D'
+    temp_r1w = 'Temp_R1W'
+    dtemp2 = 'DTemp_2'
 
 
 CB = CodeBook
