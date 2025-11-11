@@ -8,7 +8,7 @@ from gdc.utils import GDC_DATA_PATH
 __all__ = [
     'df_temp_simulated_normalized', 'df_temp_real', 'demean',
     'df_load_simulated_normalized', 'df_hourly_load_real', 'df_labels',
-    'to_zero_one', 'df_hourly_prices', 'CB', 'df_merged_real'
+    'to_zero_one', 'df_hourly_prices', 'CB', 'df_merged_real',
 ]
 
 #########################################
@@ -183,6 +183,5 @@ class CodeBook:
 CB = CodeBook
 
 
-#################################
-# Step 4 Retail pricing
-#################################
+def get_subscribers(subscribed_power=6):
+    return df_labels.loc[df_labels['Power'] == subscribed_power].index

@@ -11,7 +11,7 @@ from gdc.data_access import (
     df_load_simulated_normalized,
     df_hourly_load_real,
     df_hourly_prices,
-    df_merged_real
+    df_merged_real,
 )
 
 from gdc.tests.testutils import CachedTestCase
@@ -206,9 +206,7 @@ class TestDataframeStatistics(CachedTestCase):
         self.assertEqualToCached(stats, ref)
 
 
-
 def test_offset():
     from gdc.data_access import offset
     assert offset == -2160
-    
     
