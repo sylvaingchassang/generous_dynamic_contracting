@@ -147,6 +147,44 @@ def compute_simulated_base_variable_profit_ht(
     return profit_df
 
 
+import multiprocessing as mp
+import os
+
+def _predict_for_time(args):
+    """Worker to compute conditional moment prediction for a single timestamp.
+
+    Parameters
+    ----------
+    args : tuple
+        (t, y_row, x_row, columns, moment, q)
+    """
+    t, y_row, x_row, columns, moment, q = args
+
+    # Drop missing profits and align temperature to remaining customers
+    y = y_row.dropna()
+    if y.empty:
+        # Return all-NaN row if no data
+        return t, pd.Series(index=columns, dtype=float)
+    x = x_row.loc[y.index]
+    X = sm.add_constant(x)
+
+    if moment == 'quantile':
+        model = sm.QuantReg(y, X)
+        res = model.fit(q=q)
+    elif moment == 'mean':
+        model = sm.OLS(y, X)
+        res = model.fit()
+    else:
+        raise ValueError("moment must be 'quantile' or 'mean'.")
+
+    yhat = res.predict(X)
+
+    # Reindex to full column set
+    out = pd.Series(index=columns, dtype=float)
+    out.loc[yhat.index] = yhat.values
+    return t, out
+
+
 def predicted_moments(df_profit, df_temp, moment='quantile', q=0.5):
     """
     Estimate cross-sectional conditional moments of profit given temperature for each date.
@@ -168,25 +206,33 @@ def predicted_moments(df_profit, df_temp, moment='quantile', q=0.5):
         Predicted conditional moment (quantile or mean) for each date × customer.
     """
 
-    preds = []
+    times = list(df_profit.index)
+    columns = df_profit.columns
 
-    for t in df_profit.index:
-        y = df_profit.loc[t].dropna()
-        x = df_temp.loc[t, y.index]
-        X = sm.add_constant(x)
+    # Build tasks: one per timestamp
+    tasks = [(t, df_profit.loc[t], df_temp.loc[t], columns, moment, q)
+             for t in times]
 
-        if moment == 'quantile':
-            model = sm.QuantReg(y, X)
-            res = model.fit(q=q)
-        elif moment == 'mean':
-            model = sm.OLS(y, X)
-            res = model.fit()
-        else:
-            raise ValueError("moment must be 'quantile' or 'mean'.")
+    # Determine number of processes (75% of available cores, at least 1)
+    cpu_count = os.cpu_count() or 1
+    n_procs = max(1, int(cpu_count * 0.75))
 
-        yhat = res.predict(X)
-        preds.append(yhat.reindex(df_profit.columns))
+    results = []
+    if n_procs == 1 or len(tasks) < 2:
+        # Fallback to serial execution (small workloads or single core)
+        results = [_predict_for_time(task) for task in tasks]
+    else:
+        # Use a process pool; map preserves task order
+        try:
+            with mp.Pool(processes=n_procs, maxtasksperchild=64) as pool:
+                results = pool.map(_predict_for_time, tasks)
+        except Exception:
+            # In hostile environments (e.g., limited spawn), fallback to serial
+            results = [_predict_for_time(task) for task in tasks]
 
-    df_pred = pd.DataFrame(
-        preds, index=df_profit.index, columns=df_profit.columns)
+    # Assemble DataFrame in the original time order
+    pred_rows_by_time = {t: row for t, row in results}
+    preds_ordered = [pred_rows_by_time[t] for t in times]
+
+    df_pred = pd.DataFrame(preds_ordered, index=times, columns=columns)
     return df_pred
