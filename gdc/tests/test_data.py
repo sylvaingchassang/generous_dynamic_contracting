@@ -4,8 +4,16 @@ import xarray as xr
 import numpy as np
 import unittest
 
-from gdc.data_access import (df_temp_simulated, df_temp_real, 
-                             df_temp_simulated_normalized)
+from gdc.data_access import (
+    df_temp_simulated,
+    df_temp_real,
+    df_temp_simulated_normalized,
+    df_load_simulated_normalized,
+    df_hourly_load_real,
+    df_hourly_prices,
+    df_merged_real
+)
+
 from gdc.tests.testutils import CachedTestCase
 
 
@@ -127,8 +135,8 @@ class TestDataframeStatistics(CachedTestCase):
 
     def test_df_temp_real_statistics(self):
         # Calculate mean and standard deviation of temperature values
-        mean_value = df_temp_real['ta'].mean()
-        std_value = df_temp_real['ta'].std()
+        mean_value = df_temp_real['Temp'].mean()
+        std_value = df_temp_real['Temp'].std()
 
         # Create a dictionary with the statistics
         stats = {
@@ -140,6 +148,63 @@ class TestDataframeStatistics(CachedTestCase):
         # Set regenerate=True to update the cached values when needed
         self.assertEqualToCached(
             stats, 'real_temp_stats')
+
+    def test_df_load_simulated_normalized_statistics(self):
+        all_values = df_load_simulated_normalized.values.flatten()
+        stats = {
+            'mean': float(np.mean(all_values)),
+            'std': float(np.std(all_values)),
+        }
+        ref = 'load_simulated_normalized_stats'
+        # Auto-regenerate cache if it doesn't exist yet
+        self.assertEqualToCached(stats, ref)
+
+    def test_df_hourly_load_real_statistics(self):
+        # Focus on main consumption column
+        assert 'Consommation' in df_hourly_load_real.columns
+        cons = df_hourly_load_real['Consommation']
+        stats = {
+            'mean': float(cons.mean()),
+            'std': float(cons.std()),
+            'min': float(cons.min()),
+            'max': float(cons.max()),
+        }
+        ref = 'hourly_load_real_stats'
+        self.assertEqualToCached(stats, ref)
+
+    def test_df_hourly_prices_statistics(self):
+        # Price column naming normalized in data_access
+        assert 'Price_EUR_MWh' in df_hourly_prices.columns
+        price = df_hourly_prices['Price_EUR_MWh']
+        stats = {
+            'mean': float(price.mean()),
+            'std': float(price.std()),
+            'min': float(price.min()),
+            'max': float(price.max()),
+        }
+        ref = 'hourly_prices_stats'
+        self.assertEqualToCached(stats, ref)
+
+    def test_df_merged_real_statistics(self):
+        # Compute stats over a selected subset of informative columns
+        cols = [
+            'Consommation', 'Price_EUR_MWh', 'Temp',
+            'Conso_L1H', 'Conso_L2H', 'Conso_L1D', 'Temp_L1H', 'Temp_L2H'
+        ]
+        available_cols = [c for c in cols if c in df_merged_real.columns]
+        # Create nested dict: {col: {mean, std}}
+        stats = {
+            col: {
+                'mean': float(pd.to_numeric(df_merged_real[col],
+                                            errors='coerce').mean()),
+                'std': float(pd.to_numeric(df_merged_real[col],
+                                           errors='coerce').std()),
+            }
+            for col in available_cols
+        }
+        ref = 'merged_real_stats'
+        self.assertEqualToCached(stats, ref)
+
 
 
 def test_offset():

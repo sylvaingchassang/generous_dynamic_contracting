@@ -181,3 +181,8 @@ class CodeBook:
 
 
 CB = CodeBook
+
+
+#################################
+# Step 4 Retail pricing
+#################################
