@@ -48,7 +48,7 @@ def test_df_temp_real_structure():
     assert not df_temp_real.empty
 
     # Check that the dataframe has the expected columns
-    assert 'time' in df_temp_real.columns
+    assert 'time' == df_temp_real.index.name
     assert 'ta' in df_temp_real.columns
 
     # Check that the time column is of datetime type

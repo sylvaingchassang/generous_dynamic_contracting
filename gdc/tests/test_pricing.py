@@ -1,9 +1,11 @@
 import numpy as np
 import pandas as pd
-from gdc.pricing import get_base_price, compute_simulated_base_profit_ht
+from gdc.pricing import (get_base_price,
+                         compute_simulated_base_variable_profit_ht,
+                         predicted_moments)
 from gdc.tests.testutils import CachedTestCase
 from gdc.data_access import (df_load_simulated_normalized, df_hourly_prices,
-                             get_subscribers)
+                             get_subscribers, df_temp_simulated_normalized)
 
 
 
@@ -62,7 +64,49 @@ class TestGetBasePrice(CachedTestCase):
 class TestSimulatedProfits(CachedTestCase):
 
     def test_simulated_base_profits(self):
-        p = 6
-        this_loads = df_load_simulated_normalized.loc[:, get_subscribers(p)]
-        this_profits = compute_simulated_base_profit_ht(
-            p, this_loads, df_hourly_prices)
+        dic_loads_by_power = {}
+
+        for p in [6, 9, 12]:
+            this_customers = get_subscribers(p)
+            this_loads = df_load_simulated_normalized.loc[:,
+                         this_customers]
+            dic_loads_by_power[str(p)] = (
+                compute_simulated_base_variable_profit_ht(
+                p, this_loads, df_hourly_prices).loc[
+                    ['2023-01-10', '2023-06-07', '2023-11-28'],
+                    this_customers[:3]
+            ].to_json())
+
+        self.assertEqualToCached(
+            dic_loads_by_power, 'simulated_base_profits')
+
+
+class TestPredictedMoments(CachedTestCase):
+
+    def test_predicted_moments_quantile_and_mean(self):
+        # Keep very small to be fast
+        power = 6
+        customers = get_subscribers(power)[:800]
+        dates = ['2023-01-10', '2023-06-07', '2023-11-28']
+
+        # Profit subset (hours x customers)
+        loads = df_load_simulated_normalized.loc[dates, customers]
+        profits = compute_simulated_base_variable_profit_ht(
+            power, loads, df_hourly_prices).loc[dates, customers]
+
+        # Use simulated local temperatures aligned by customer and time
+        temp_df = df_temp_simulated_normalized.loc[profits.index, customers]
+
+        # Compute predicted moments
+        pred_q50 = predicted_moments(
+            profits, temp_df, moment='quantile', q=0.5)
+        pred_mean = predicted_moments(profits, temp_df, moment='mean')
+
+        # Round to stabilize across platforms and versions
+        out = {
+            'q50': pred_q50.round(8).to_json(),
+            'mean': pred_mean.round(8).to_json(),
+        }
+
+        self.assertEqualToCached(out, 'predicted_moments_reference')
+

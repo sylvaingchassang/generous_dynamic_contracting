@@ -1,6 +1,8 @@
 import pandas as pd
 from os import path
 from datetime import datetime, date
+import numpy as np
+import statsmodels.api as sm
 
 from gdc.data_access import GDC_DATA_PATH
 
@@ -141,6 +143,50 @@ def compute_simulated_base_variable_profit_ht(
     # Multiply each row of loads by the corresponding scalar margin for
     # that hour
     profit_df = loads.mul(margin_per_kwh, axis=0)
-    
+
     return profit_df
 
+
+def predicted_moments(df_profit, df_temp, moment='quantile', q=0.5):
+    """
+    Estimate cross-sectional conditional moments of profit given temperature for each date.
+
+    Parameters
+    ----------
+    df_profit : pd.DataFrame
+        Profit data, indexed by datetime, columns = customers.
+    df_temp : pd.DataFrame
+        Temperature data, same shape as df_profit.
+    moment : {'quantile', 'mean'}
+        Moment to estimate: conditional quantile or conditional mean.
+    q : float, optional
+        Quantile level (only used if moment='quantile').
+
+    Returns
+    -------
+    df_pred : pd.DataFrame
+        Predicted conditional moment (quantile or mean) for each date × customer.
+    """
+
+    preds = []
+
+    for t in df_profit.index:
+        y = df_profit.loc[t].dropna()
+        x = df_temp.loc[t, y.index]
+        X = sm.add_constant(x)
+
+        if moment == 'quantile':
+            model = sm.QuantReg(y, X)
+            res = model.fit(q=q)
+        elif moment == 'mean':
+            model = sm.OLS(y, X)
+            res = model.fit()
+        else:
+            raise ValueError("moment must be 'quantile' or 'mean'.")
+
+        yhat = res.predict(X)
+        preds.append(yhat.reindex(df_profit.columns))
+
+    df_pred = pd.DataFrame(
+        preds, index=df_profit.index, columns=df_profit.columns)
+    return df_pred
