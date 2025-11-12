@@ -9,7 +9,7 @@ __all__ = [
     'df_temp_simulated_normalized', 'df_temp_real', 'demean',
     'df_load_simulated_normalized', 'df_hourly_load_real', 'df_labels',
     'to_zero_one', 'df_hourly_prices', 'CB', 'df_merged_real',
-    'get_subscribers'
+    'get_subscribers', 'df_temp_real_24'
 ]
 
 #########################################
@@ -29,6 +29,15 @@ ds_temp_real = xr.open_dataset(
 )
 
 df_temp_real = ds_temp_real[['time', 'ta']].to_dataframe().reset_index()
+
+# 1h real temperature data - Jan 1 to Dec 31, 2024
+ds_temp_real_24 = xr.open_dataset(
+    path.join(GDC_DATA_PATH, 'real', 'temperature',
+              '91027002_ORLY_MTO_1H_2024.nc'),
+    engine='netcdf4'
+)
+
+df_temp_real_24 = ds_temp_real_24[['time', 'ta']].to_dataframe().reset_index()
 
 
 # finding offset
@@ -77,9 +86,10 @@ df_temp_simulated_normalized.index = pd.to_datetime(
     df_temp_real.iloc[:len(df_temp_simulated_normalized)]['time'].values)
 
 df_temp_real.set_index('time', inplace=True)
-
 df_temp_real.rename(columns={'ta': 'Temp'}, inplace=True)
 
+df_temp_real_24.set_index('time', inplace=True)
+df_temp_real_24.rename(columns={'ta': 'Temp'}, inplace=True)
 
 #########################################
 # Step 2 Apply Offset to simulated loads
