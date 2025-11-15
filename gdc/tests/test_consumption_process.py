@@ -9,8 +9,8 @@ class TestPooledSeasonalUncorrelatedErrors(CachedTestCase):
 
     def setUp(self):
         self.model = PooledSeasonalUncorrelatedErrors(
-            Y=df_load_simulated_normalized[range(100)],
-            T=df_temp_simulated_normalized[range(100)]
+            y=df_load_simulated_normalized[range(100)],
+            temp=df_temp_simulated_normalized[range(100)]
         )
 
     def test_estimation_results(self):
@@ -35,8 +35,8 @@ class TestIndividualSeasonalUncorrelatedErrors(CachedTestCase):
 
     def setUp(self):
         self.model = IndividualSeasonalUncorrelatedErrors(
-            Y=df_load_simulated_normalized[range(100)],
-            T=df_temp_simulated_normalized[range(100)]
+            y=df_load_simulated_normalized[range(100)],
+            temp=df_temp_simulated_normalized[range(100)]
         )
 
     def test_estimation_results(self):

@@ -1,21 +1,24 @@
 import numpy as np
+from abc import ABC, abstractmethod
+
 from gdc.data_access import (df_temp_simulated_normalized,
                              df_load_simulated_normalized)
+from gdc.utils import ExtendedNamespace
 
 
-class ConsumptionModel:
-    def __init__(self, Y=df_load_simulated_normalized,
-                 T=df_temp_simulated_normalized):
+class ConsumptionModel(ABC):
+    def __init__(self, y=df_load_simulated_normalized,
+                 temp=df_temp_simulated_normalized):
         tau_h, tau_c = 15.0, 20.0
-        HDD = (tau_h - T).clip(lower=0)
-        CDD = (T - tau_c).clip(lower=0)
-        self.Yv = Y.to_numpy(dtype=np.float32, copy=False)
-        self.HDDv = HDD.to_numpy(dtype=np.float32, copy=False)
-        self.CDDv = CDD.to_numpy(dtype=np.float32, copy=False)
+        heating_degree_days = (tau_h - temp).clip(lower=0)
+        cooling_degree_days = (temp - tau_c).clip(lower=0)
+        self.Yv = y.to_numpy(dtype=np.float32, copy=False)
+        self.HDDv = heating_degree_days.to_numpy(dtype=np.float32, copy=False)
+        self.CDDv = cooling_degree_days.to_numpy(dtype=np.float32, copy=False)
 
-        self.month = Y.index.month.values  # (nT,)
+        self.month = y.index.month.values  # (nT,)
         self.m_idx = self.month - 1  # 0..11
-        self.nT, self.nI = Y.shape
+        self.nT, self.nI = y.shape
         self.months = np.arange(12)
 
         self.n_dates, self.n_cons = self.Yv.shape
@@ -23,33 +26,40 @@ class ConsumptionModel:
         self.hod = idx % 24  # 0..23
         self.dow = (idx // 24) % 7
 
-    def individual_centered_day_hour_means(self):
-        """
-        Returns centered individual Day Hour intercept tables:
-          Hy0: (24, N) hour-of-day FE, column-centered (sum over 24 = 0 per consumer)
-          Dy0: ( 7, N) day-of-week FE, column-centered (sum over 7  = 0 per consumer)
-        """
-        Hy = np.vstack([self.Yv[self.hod == h, :].mean(axis=0)
-                        for h in range(24)])  # (24,N) mean consumption at each hour
-        Dy = np.vstack([self.Yv[self.dow == d, :].mean(axis=0)
-                        for d in range(7)])   # (7,N) mean consumption at each DOW
-        Hy0 = Hy - Hy.mean(axis=0, keepdims=True) # center columns
-        Dy0 = Dy - Dy.mean(axis=0, keepdims=True) # center columns
-        return Hy0, Dy0
+    @abstractmethod
+    def _single_var_demean_func(self, v):
+        # returns v_within, v_means
+        pass
 
-    def pooled_centered_day_hour_means(self):
-        """
-        Returns centered individual Day Hour intercept tables:
-          Hy0: (24, 1) hour-of-day FE, column-centered (sum over 24 = 0 overall)
-          Dy0: ( 7, 1) day-of-week FE, column-centered (sum over 7  = 0 overall)
-        """
-        Hy = np.vstack([self.Yv[self.hod == h, :].mean()
-                        for h in range(24)]).reshape(-1,1)  # (24,1) mean consumption at each hour across all consumers
-        Dy = np.vstack([self.Yv[self.dow == d, :].mean()
-                        for d in range(7)]).reshape(-1,1)  # (7,1) mean consumption at each DOW across all consumers
-        Hy0 = Hy - Hy.mean(axis=0, keepdims=True)  # center columns
-        Dy0 = Dy - Dy.mean(axis=0, keepdims=True)  # center columns
-        return Hy0, Dy0
+    def demeaned_variables(self):
+        y_within, y_means = self._single_var_demean_func(self.Yv)
+        hdd_within, hdd_means = self._single_var_demean_func(self.HDDv)
+        cdd_within, cdd_means = self._single_var_demean_func(self.CDDv)
+        return ((y_within, hdd_within, cdd_within),
+                ExtendedNamespace(
+                    y_means=y_means,
+                    hdd_means=hdd_means,
+                    cdd_means=cdd_means)
+                )
+
+    def _estimate_beta(self, y_within, hdd_within, cdd_within):
+        # 2×2 normal equations
+        s_hh = np.einsum('ij,ij->', hdd_within, hdd_within)
+        s_cc = np.einsum('ij,ij->', cdd_within, cdd_within)
+        s_hc = np.einsum('ij,ij->', hdd_within, cdd_within)
+        s_hy = np.einsum('ij,ij->', hdd_within, y_within)
+        s_cy = np.einsum('ij,ij->', cdd_within, y_within)
+        det = s_hh * s_cc - s_hc * s_hc
+        beta = np.array(
+            [(s_hy * s_cc - s_cy * s_hc) / det,
+             (-s_hy * s_hc + s_cy * s_hh) / det],
+            dtype=np.float64)
+        return beta
+
+    def fit(self):
+        (y_within, hdd_within, cdd_within), means = self.demeaned_variables()
+        beta = self._estimate_beta(y_within, hdd_within, cdd_within)
+        return beta, means
 
     def print_coeffs_and_forecast_metrics(self,
             beta,
@@ -124,42 +134,32 @@ class ConsumptionModel:
 
 class PooledSeasonalUncorrelatedErrors(ConsumptionModel):
 
-    def fit(self):
-        # centered pooled seasonal intercepts
-        Hy0, Dy0 = self.get_seasonal_effects()
-
-        # pooled month means (scalars per month)
-        mY = np.array([self.Yv[self.m_idx == k, :].mean() for k in self.months])
-        mH = np.array([self.HDDv[self.m_idx == k, :].mean() for k in self.months])
-        mC = np.array([self.CDDv[self.m_idx == k, :].mean() for k in self.months])
-
-        # within by month on Y and X; subtract pooled seasonal from Y only
-        Yw = self.Yv - mY[self.m_idx, None] - Hy0[self.hod, :] - Dy0[self.dow, :]
-        HDDw = self.HDDv - mH[self.m_idx, None]
-        CDDw = self.CDDv - mC[self.m_idx, None]
-
-        # 2×2 normal equations
-        Shh = np.einsum('ij,ij->', HDDw, HDDw)
-        Scc = np.einsum('ij,ij->', CDDw, CDDw)
-        Shc = np.einsum('ij,ij->', HDDw, CDDw)
-        Shy = np.einsum('ij,ij->', HDDw, Yw)
-        Scy = np.einsum('ij,ij->', CDDw, Yw)
-        det = Shh * Scc - Shc * Shc
-        beta_A = np.array(
-            [(Shy * Scc - Scy * Shc) / det, (-Shy * Shc + Scy * Shh) / det],
-            dtype=np.float64)
-
-        # month intercepts (on original scale)
-        alpha_m = mY - (beta_A[0] * mH + beta_A[1] * mC)
-
-        seasonal = {"Hy0": Hy0, "Dy0": Dy0}
-        return alpha_m, beta_A, seasonal
-
-    def get_seasonal_effects(self):
-        return self.pooled_centered_day_hour_means()
+    def _single_var_demean_func(self, v):
+        v_m = np.array(
+            [v[self.m_idx == k, :].mean() for k in self.months])  # (12, 1)
+        v_dow = np.vstack(
+            [v[self.dow == d, :].mean() for d in range(7)])  # (7, 1)
+        v_h = np.vstack(
+            [v[self.hod == h, :].mean() for h in range(24)])  # (24,1)
+        v_h0 = v_h - v_h.mean(axis=0, keepdims=True)
+        v_dow0 = v_dow - v_dow.mean(axis=0, keepdims=True)
+        v_within = (v - v_m[self.m_idx, None]
+                    - v_h0[self.hod, None] - v_dow0[self.dow, None])
+        return v_within, (v_m, v_dow0, v_h0)  # month is not demeaned -- replaces alphas
 
 
-class IndividualSeasonalUncorrelatedErrors(PooledSeasonalUncorrelatedErrors):
+class IndividualSeasonalUncorrelatedErrors(ConsumptionModel):
 
-    def get_seasonal_effects(self):
-        return self.individual_centered_day_hour_means()
+    def _single_var_demean_func(self, v):
+        v_im = np.array(
+            [v[self.m_idx == k, :].mean(axis=0) for k in
+             self.months])  # (12,N)
+        v_idow = np.vstack(
+            [v[self.dow == d, :].mean(axis=0) for d in range(7)])  # (7,N)
+        v_ih = np.vstack([v[self.hod == h, :].mean(axis=0) for h in
+                          range(24)])  # (24,N)
+        v_ih0 = v_ih - v_ih.mean(axis=0, keepdims=True)
+        v_idow0 = v_idow - v_idow.mean(axis=0, keepdims=True)
+        v_within = (v - v_im[self.m_idx, :]
+                    - v_ih0[self.hod, :] - v_idow0[self.dow, :])
+        return v_within, (v_im, v_idow0, v_ih0)
