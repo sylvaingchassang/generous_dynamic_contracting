@@ -8,7 +8,6 @@ from gdc.data_access import (df_load_simulated_normalized, df_hourly_prices,
                              get_subscribers, df_temp_simulated_normalized)
 
 
-
 class TestGetBasePrice(CachedTestCase):
 
     def test_get_base_price_values_cached(self):
@@ -99,7 +98,7 @@ class TestPredictedMoments(CachedTestCase):
 
         # Compute predicted moments
         pred_q50 = predicted_moments(
-            profits, temp_df, moment='quantile', q=0.5)
+            profits, temp_df)
         pred_mean = predicted_moments(profits, temp_df, moment='mean')
 
         # Round to stabilize across platforms and versions
