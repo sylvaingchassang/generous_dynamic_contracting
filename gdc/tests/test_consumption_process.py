@@ -1,6 +1,6 @@
 from gdc.tests.testutils import CachedTestCase
 from gdc.estimation.consumption import (
-    PooledSeasonalUncorrelatedErrors, IndividualSeasonalUncorrelatedErrors)
+    PooledMDHUncorrelatedErrors, IndividualMDHUncorrelatedErrors)
 from gdc.data_access import (
     df_load_simulated_normalized, df_temp_simulated_normalized)
 
@@ -8,24 +8,21 @@ from gdc.data_access import (
 class TestPooledSeasonalUncorrelatedErrors(CachedTestCase):
 
     def setUp(self):
-        self.model = PooledSeasonalUncorrelatedErrors(
+        self.model = PooledMDHUncorrelatedErrors(
             y=df_load_simulated_normalized[range(100)],
             temp=df_temp_simulated_normalized[range(100)]
         )
 
     def test_estimation_results(self):
-        alpha_m, beta_A, seasonal = self.model.fit()
-        assert alpha_m.shape == (12,)
-        assert beta_A.shape == (2,)
-        assert seasonal['Hy0'].shape == (24, 1)
-        assert seasonal['Dy0'].shape == (7, 1)
-        summary = self.model.print_coeffs_and_forecast_metrics(
-            beta=beta_A,
-            alpha_m=alpha_m,
-            Hy0=seasonal['Hy0'],
-            Dy0=seasonal['Dy0'],
-            label="PooledSeasonalUncorrelatedErrors"
-        )
+        beta, means = self.model.fit()
+        assert beta.shape == (2,)
+        y_m, y_d, y_h = means.y_means
+        assert y_m.shape == (24, 1)
+        assert y_d.shape == (7, 1)
+        assert y_h.shape == (12, 1)
+        summary = self.model.summary(
+            beta, means,
+            "PooledSeasonalUncorrelatedErrors")
         self.assertEqualToCached(
             {'Summary': summary},
             'pooled_seasonal_uncorrelated_errors_summary')
@@ -34,7 +31,7 @@ class TestPooledSeasonalUncorrelatedErrors(CachedTestCase):
 class TestIndividualSeasonalUncorrelatedErrors(CachedTestCase):
 
     def setUp(self):
-        self.model = IndividualSeasonalUncorrelatedErrors(
+        self.model = IndividualMDHUncorrelatedErrors(
             y=df_load_simulated_normalized[range(100)],
             temp=df_temp_simulated_normalized[range(100)]
         )

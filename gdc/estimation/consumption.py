@@ -56,83 +56,70 @@ class ConsumptionModel(ABC):
             dtype=np.float64)
         return beta
 
-    def fit(self):
+    def  fit(self):
         (y_within, hdd_within, cdd_within), means = self.demeaned_variables()
         beta = self._estimate_beta(y_within, hdd_within, cdd_within)
         return beta, means
 
-    def print_coeffs_and_forecast_metrics(self,
-            beta,
-            alpha_m=None,  # optional pure month FE (12,)
-            alpha_im=None,  # (12,N) i×month
-            alpha_ih=None,  # (24,N) i×hour (if using i×hour model)
-            Hy0=None,  # (24,N) or (24,1) centered pooled hour
-            Dy0=None,  # (7,N) or (24,1)
-            alpha_id=None,  # (7,N)  i×DOW (if using i×DOW model)
-            rho=None,
-            label="Model"
-    ):
-        Yv, HDDv, CDDv, m_idx = self.Yv, self.HDDv, self.CDDv, self.m_idx
-        mu = np.zeros_like(Yv, dtype=float)
+    def predict_static_means(self, beta, means, hddv=None, cddv=None):
+        if hddv is None:
+            hddv = self.HDDv
+        if cddv is None:
+            cddv = self.CDDv
 
-        if alpha_m is not None:
-            mu += alpha_m[m_idx, None]
+        mu = np.zeros_like(hddv, dtype=float)
+        mu += sum(means.y_means)
+        demeaned_hddv = hddv - sum(means.hdd_means)
+        demeaned_cddv = cddv - sum(means.cdd_means)
+        mu += beta[0] * demeaned_hddv + beta[1] * demeaned_cddv
 
-        if alpha_im is not None:
-            mu += alpha_im[m_idx, :]
+    def static_resids(self, beta, means):
+        resids = self.Yv - self.predict_static_means(beta, means)
+        return resids
 
-        if alpha_ih is not None:
-            mu += alpha_ih[self.hod, :]
-        elif Hy0 is not None:
-            mu += Hy0[self.hod, :]
+    def summary(self, beta, means, label="Model"):
 
-        if alpha_id is not None:
-            mu += alpha_id[self.dow, :]
-        elif Dy0 is not None:
-            mu += Dy0[self.dow, :]
+        static_resids = self.static_resids(beta, means)
+        static_sse = float(np.sum(static_resids ** 2))
+        sst = float(np.sum((self.Yv - self.Yv.mean()) ** 2))
+        r2 = 1.0 - static_sse / sst
+        rmse = float(np.sqrt(static_sse / self.Yv.size))
 
-        mu += beta[0] * HDDv + beta[1] * CDDv
-
-        # --- static fit ---
-        resid_s = Yv - mu
-        sse_s = float(np.sum(resid_s ** 2))
-        sst = float(np.sum((Yv - Yv.mean()) ** 2))
-        r2_s = 1.0 - sse_s / sst
-        rmse_s = float(np.sqrt(sse_s / Yv.size))
-
-        # --- dynamic one-step fit (if rho provided) ---
-        if rho is not None:
-            yhat_dyn = mu.copy()
-            yhat_dyn[1:, :] += rho * (Yv[:-1, :] - mu[:-1, :])
-            resid_d = Yv - yhat_dyn
-            sse_d = float(np.sum(resid_d ** 2))
-            r2_d = 1.0 - sse_d / sst
-            rmse_d = float(np.sqrt(sse_d / Yv.size))
-        else:
-            r2_d = rmse_d = None
-
-        # --- return summary as dict ---
         summary = {
             "label": label,
             "beta_HDD": float(beta[0]),
             "beta_CDD": float(beta[1]),
             "static_fit": {
-                "r2": float(r2_s),
-                "rmse": float(rmse_s)
+                "r2": float(r2),
+                "rmse": float(rmse)
             }
         }
 
-        if rho is not None:
-            summary["dynamic_fit"] = {
-                "rho": float(rho),
-                "r2": float(r2_d),
-                "rmse": float(rmse_d)
-            }
+        # --- dynamic one-step fit (if rho provided) ---
+        # if rho is not None:
+        #     yhat_dyn = mu.copy()
+        #     yhat_dyn[1:, :] += rho * (Yv[:-1, :] - mu[:-1, :])
+        #     resid_d = Yv - yhat_dyn
+        #     sse_d = float(np.sum(resid_d ** 2))
+        #     r2_d = 1.0 - sse_d / sst
+        #     rmse_d = float(np.sqrt(sse_d / Yv.size))
+        # else:
+        #     r2_d = rmse_d = None
+
+        # --- return summary as dict ---
+        #
+        #
+        # if rho is not None:
+        #     summary["dynamic_fit"] = {
+        #         "rho": float(rho),
+        #         "r2": float(r2_d),
+        #         "rmse": float(rmse_d)
+        #     }
 
         return summary
 
 
-class PooledSeasonalUncorrelatedErrors(ConsumptionModel):
+class PooledMDHUncorrelatedErrors(ConsumptionModel):
 
     def _single_var_demean_func(self, v):
         v_m = np.array(
@@ -143,12 +130,14 @@ class PooledSeasonalUncorrelatedErrors(ConsumptionModel):
             [v[self.hod == h, :].mean() for h in range(24)])  # (24,1)
         v_h0 = v_h - v_h.mean(axis=0, keepdims=True)
         v_dow0 = v_dow - v_dow.mean(axis=0, keepdims=True)
-        v_within = (v - v_m[self.m_idx, None]
-                    - v_h0[self.hod, None] - v_dow0[self.dow, None])
+        v_m = v_m[self.m_idx, None]
+        v_h0 = v_h0[self.hod, None]
+        v_dow0 = v_dow0[self.dow, None]
+        v_within = v - v_m - v_h0 - v_dow0
         return v_within, (v_m, v_dow0, v_h0)  # month is not demeaned -- replaces alphas
 
 
-class IndividualSeasonalUncorrelatedErrors(ConsumptionModel):
+class IndividualMDHUncorrelatedErrors(ConsumptionModel):
 
     def _single_var_demean_func(self, v):
         v_im = np.array(
@@ -160,6 +149,8 @@ class IndividualSeasonalUncorrelatedErrors(ConsumptionModel):
                           range(24)])  # (24,N)
         v_ih0 = v_ih - v_ih.mean(axis=0, keepdims=True)
         v_idow0 = v_idow - v_idow.mean(axis=0, keepdims=True)
-        v_within = (v - v_im[self.m_idx, :]
-                    - v_ih0[self.hod, :] - v_idow0[self.dow, :])
+        v_im = v_im[self.m_idx, :]
+        v_ih0 = v_ih0[self.hod, :]
+        v_idow0 = v_idow0[self.dow, :]
+        v_within = v - v_im - v_ih0 - v_idow0
         return v_within, (v_im, v_idow0, v_ih0)
