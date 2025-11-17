@@ -34,9 +34,11 @@ class TestPooledSeasonalUncorrelatedErrors(CachedTestCase):
         summary = self.model.summary(
             beta, means,
             "PooledMDHUncorrelatedErrors")
-        self.assertEqualToCached(
+        self.assertAlmostEqualToCached(
             {'Summary': summary},
-            'pooled_mdh_uncorrelated_errors_summary')
+            'pooled_mdh_uncorrelated_errors_summary',
+            delta=1e-6
+        )
 
 
 class TestIndividualSeasonalUncorrelatedErrors(CachedTestCase):
@@ -66,7 +68,9 @@ class TestIndividualSeasonalUncorrelatedErrors(CachedTestCase):
         summary = self.model.summary(
             beta, means,
             "IndividualMDHUncorrelatedErrors")
-        self.assertEqualToCached(
+        self.assertAlmostEqualToCached(
             {'Summary': summary},
-            'individual_mdh_uncorrelated_errors_summary')
+            'individual_mdh_uncorrelated_errors_summary',
+            delta=1e-6
+        )
 

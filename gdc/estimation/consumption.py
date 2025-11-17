@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from abc import ABC, abstractmethod
 
 from gdc.data_access import (df_temp_simulated_normalized,
@@ -16,15 +17,22 @@ class ConsumptionModel(ABC):
         self.HDDv = heating_degree_days.to_numpy(dtype=np.float32, copy=False)
         self.CDDv = cooling_degree_days.to_numpy(dtype=np.float32, copy=False)
 
-        self.month = y.index.month.values  # (nT,)
-        self.m_idx = self.month - 1  # 0..11
-        self.nT, self.nI = y.shape
-        self.months = np.arange(12)
+        self.m_idx, self.dow, self.hod = self._get_m_d_h(y.index)
+        # self.month = y.index.month.values  # (nT,)
+        # self.m_idx = self.month - 1  # 0..11
+        # self.nT, self.nI = y.shape
+        # self.months = np.arange(12)
+        #
+        # self.n_dates, self.n_cons = self.Yv.shape
+        # idx = np.arange(self.n_dates)
+        # self.hod = idx % 24  # 0..23  # directly get hour of day
+        # self.dow = (idx // 24) % 7  # directly get day of week 0..6
 
-        self.n_dates, self.n_cons = self.Yv.shape
-        idx = np.arange(self.n_dates)
-        self.hod = idx % 24  # 0..23
-        self.dow = (idx // 24) % 7
+    def _get_m_d_h(self, index: pd.DatetimeIndex):
+        m_idx = index.month.values -1 # 0..11
+        dow = index.dayofweek.values # 0..6
+        hod = index.hour.values # 0..23
+        return m_idx, dow, hod
 
     @abstractmethod
     def _single_var_demean_func(self, v):
@@ -66,16 +74,21 @@ class ConsumptionModel(ABC):
         return beta, means
 
     def predict_static_means(self, beta, means, hddv=None, cddv=None):
-        #TODO: need to adapt broadcasting of means for out-of-sample prediction
+        if hddv is not None:
+            indices = self._get_m_d_h(hddv.index)
+        else:
+            indices = None
         if hddv is None:
             hddv = self.HDDv
         if cddv is None:
             cddv = self.CDDv
 
         mu = np.zeros_like(hddv, dtype=float)
-        mu += sum(self._broadcast_means(means.y_means))
-        demeaned_hddv = hddv - sum(self._broadcast_means(means.hdd_means))
-        demeaned_cddv = cddv - sum(self._broadcast_means(means.cdd_means))
+        mu += sum(self._broadcast_means(means.y_means, indices))
+        demeaned_hddv = hddv - sum(
+            self._broadcast_means(means.hdd_means, indices))
+        demeaned_cddv = cddv - sum(self._broadcast_means(means.cdd_means,
+                                                         indices))
         mu += beta[0] * demeaned_hddv + beta[1] * demeaned_cddv
         return mu
 
@@ -139,7 +152,7 @@ class PooledMDHUncorrelatedErrors(ConsumptionModel):
 
     def _single_var_demean_func(self, v):
         v_m = np.array(
-            [v[self.m_idx == k, :].mean() for k in self.months])  # (12, 1)
+            [v[self.m_idx == k, :].mean() for k in range(12)])  # (12, 1)
         v_dow = np.array(
             [v[self.dow == d, :].mean() for d in range(7)])  # (7, 1)
         v_h = np.array(
@@ -165,7 +178,7 @@ class IndividualMDHUncorrelatedErrors(ConsumptionModel):
 
     def _single_var_demean_func(self, v):
         v_im = np.array(
-            [v[self.m_idx == k, :].mean(axis=0) for k in self.months])  # (12,N)
+            [v[self.m_idx == k, :].mean(axis=0) for k in range(12)])  # (12,N)
         v_idow = np.array(
             [v[self.dow == d, :].mean(axis=0) for d in range(7)])  # (7,N)
         v_ih = np.array([v[self.hod == h, :].mean(axis=0) for h in

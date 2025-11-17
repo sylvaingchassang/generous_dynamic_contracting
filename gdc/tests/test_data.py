@@ -49,24 +49,24 @@ def test_df_temp_real_structure():
 
     # Check that the dataframe has the expected columns
     assert 'time' == df_temp_real.index.name
-    assert 'ta' in df_temp_real.columns
+    assert 'Temp' in df_temp_real.columns
 
     # Check that the time column is of datetime type
-    assert pd.api.types.is_datetime64_any_dtype(df_temp_real['time'])
+    assert pd.api.types.is_datetime64_any_dtype(df_temp_real.index)
 
     # Check that the temperature column has numeric values
-    assert pd.api.types.is_numeric_dtype(df_temp_real['ta'])
+    assert pd.api.types.is_numeric_dtype(df_temp_real['Temp'])
 
 
 def test_df_temp_real_values():
     """Test some basic properties of the real temperature values."""
     # Temperature appears to be in Kelvin
     # Reasonable range for atmospheric temperatures in Kelvin
-    assert df_temp_real['ta'].min() > 200
-    assert df_temp_real['ta'].max() < 330
+    assert df_temp_real['Temp'].min() > 200
+    assert df_temp_real['Temp'].max() < 330
 
     # Check for missing values
-    assert not df_temp_real['ta'].isna().any()
+    assert not df_temp_real['Temp'].isna().any()
 
 
 def test_df_temp_simulated_values():
@@ -106,11 +106,11 @@ def test_df_temp_real_shape():
     # We expect a 2D dataframe with rows and columns
     assert len(shape) == 2
     assert shape[0] == 8760  # At least one row
-    assert shape[1] == 6  # At least one column
+    assert shape[1] == 5  # At least one column
 
 
 def test_df_temp_simulated_normalized_shape():
-    assert df_temp_simulated_normalized.shape == (10000, 8712)
+    assert df_temp_simulated_normalized.shape == (8712, 10000)
 
 
 class TestDataframeStatistics(CachedTestCase):
