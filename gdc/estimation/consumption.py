@@ -31,6 +31,10 @@ class ConsumptionModel(ABC):
         # returns v_within, v_means
         pass
 
+    @abstractmethod
+    def _broadcast_means(self, means, indices=None):
+        pass
+
     def demeaned_variables(self):
         y_within, y_means = self._single_var_demean_func(self.Yv)
         hdd_within, hdd_means = self._single_var_demean_func(self.HDDv)
@@ -56,22 +60,24 @@ class ConsumptionModel(ABC):
             dtype=np.float64)
         return beta
 
-    def  fit(self):
+    def fit(self):
         (y_within, hdd_within, cdd_within), means = self.demeaned_variables()
         beta = self._estimate_beta(y_within, hdd_within, cdd_within)
         return beta, means
 
     def predict_static_means(self, beta, means, hddv=None, cddv=None):
+        #TODO: need to adapt broadcasting of means for out-of-sample prediction
         if hddv is None:
             hddv = self.HDDv
         if cddv is None:
             cddv = self.CDDv
 
         mu = np.zeros_like(hddv, dtype=float)
-        mu += sum(means.y_means)
-        demeaned_hddv = hddv - sum(means.hdd_means)
-        demeaned_cddv = cddv - sum(means.cdd_means)
+        mu += sum(self._broadcast_means(means.y_means))
+        demeaned_hddv = hddv - sum(self._broadcast_means(means.hdd_means))
+        demeaned_cddv = cddv - sum(self._broadcast_means(means.cdd_means))
         mu += beta[0] * demeaned_hddv + beta[1] * demeaned_cddv
+        return mu
 
     def static_resids(self, beta, means):
         resids = self.Yv - self.predict_static_means(beta, means)
@@ -121,36 +127,51 @@ class ConsumptionModel(ABC):
 
 class PooledMDHUncorrelatedErrors(ConsumptionModel):
 
+    def _broadcast_means(self, means, indices=None):
+        if indices is None:
+            indices = self.m_idx, self.dow, self.hod
+        m_idx, dow, hod = indices
+        v_m, v_dow, v_h = means
+        v_m_b = v_m[m_idx, None]
+        v_dow_b = v_dow[dow, None]
+        v_h_b = v_h[hod, None]
+        return v_m_b, v_dow_b, v_h_b
+
     def _single_var_demean_func(self, v):
         v_m = np.array(
             [v[self.m_idx == k, :].mean() for k in self.months])  # (12, 1)
-        v_dow = np.vstack(
+        v_dow = np.array(
             [v[self.dow == d, :].mean() for d in range(7)])  # (7, 1)
-        v_h = np.vstack(
+        v_h = np.array(
             [v[self.hod == h, :].mean() for h in range(24)])  # (24,1)
         v_h0 = v_h - v_h.mean(axis=0, keepdims=True)
         v_dow0 = v_dow - v_dow.mean(axis=0, keepdims=True)
-        v_m = v_m[self.m_idx, None]
-        v_h0 = v_h0[self.hod, None]
-        v_dow0 = v_dow0[self.dow, None]
-        v_within = v - v_m - v_h0 - v_dow0
-        return v_within, (v_m, v_dow0, v_h0)  # month is not demeaned -- replaces alphas
+        means = (v_m, v_dow0, v_h0)
+        v_within = v - sum(self._broadcast_means(means))
+        return v_within, means  # month is not demeaned -- replaces alphas
 
 
 class IndividualMDHUncorrelatedErrors(ConsumptionModel):
 
+    def _broadcast_means(self, means, indices=None):
+        if indices is None:
+            indices = self.m_idx, self.dow, self.hod
+        m_idx, dow, hod = indices
+        v_m, v_dow, v_h = means
+        v_m_b = v_m[m_idx, :]
+        v_dow_b = v_dow[dow, :]
+        v_h_b = v_h[hod, :]
+        return v_m_b, v_dow_b, v_h_b
+
     def _single_var_demean_func(self, v):
         v_im = np.array(
-            [v[self.m_idx == k, :].mean(axis=0) for k in
-             self.months])  # (12,N)
-        v_idow = np.vstack(
+            [v[self.m_idx == k, :].mean(axis=0) for k in self.months])  # (12,N)
+        v_idow = np.array(
             [v[self.dow == d, :].mean(axis=0) for d in range(7)])  # (7,N)
-        v_ih = np.vstack([v[self.hod == h, :].mean(axis=0) for h in
+        v_ih = np.array([v[self.hod == h, :].mean(axis=0) for h in
                           range(24)])  # (24,N)
         v_ih0 = v_ih - v_ih.mean(axis=0, keepdims=True)
         v_idow0 = v_idow - v_idow.mean(axis=0, keepdims=True)
-        v_im = v_im[self.m_idx, :]
-        v_ih0 = v_ih0[self.hod, :]
-        v_idow0 = v_idow0[self.dow, :]
-        v_within = v - v_im - v_ih0 - v_idow0
+        means = (v_im, v_idow0, v_ih0)
+        v_within = v - sum(self._broadcast_means(means))
         return v_within, (v_im, v_idow0, v_ih0)

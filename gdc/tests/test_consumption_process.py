@@ -1,3 +1,5 @@
+import numpy as np
+from numpy.testing import assert_array_almost_equal
 from gdc.tests.testutils import CachedTestCase
 from gdc.estimation.consumption import (
     PooledMDHUncorrelatedErrors, IndividualMDHUncorrelatedErrors)
@@ -13,42 +15,58 @@ class TestPooledSeasonalUncorrelatedErrors(CachedTestCase):
             temp=df_temp_simulated_normalized[range(100)]
         )
 
+    def test_demeaned_variables(self):
+        (y_within, hdd_within, cdd_within), means = (
+            self.model.demeaned_variables())
+        assert y_within.shape == (8712, 100)
+        assert hdd_within.shape == (8712, 100)
+        assert cdd_within.shape == (8712, 100)
+        y_m, y_d, y_h = means.y_means
+        assert y_m.shape == (12,)
+        assert y_d.shape == (7,)
+        assert y_h.shape == (24,)
+        self.assertAlmostEqual(y_d.mean(), 0.0, places=2)
+        self.assertAlmostEqual(y_h.mean(), 0.0, places=2)
+
     def test_estimation_results(self):
         beta, means = self.model.fit()
         assert beta.shape == (2,)
-        y_m, y_d, y_h = means.y_means
-        assert y_m.shape == (24, 1)
-        assert y_d.shape == (7, 1)
-        assert y_h.shape == (12, 1)
         summary = self.model.summary(
             beta, means,
-            "PooledSeasonalUncorrelatedErrors")
+            "PooledMDHUncorrelatedErrors")
         self.assertEqualToCached(
             {'Summary': summary},
-            'pooled_seasonal_uncorrelated_errors_summary')
+            'pooled_mdh_uncorrelated_errors_summary')
 
 
 class TestIndividualSeasonalUncorrelatedErrors(CachedTestCase):
-
+    # Note: original nb model did not use individual month effects
     def setUp(self):
         self.model = IndividualMDHUncorrelatedErrors(
             y=df_load_simulated_normalized[range(100)],
             temp=df_temp_simulated_normalized[range(100)]
         )
 
+    def test_demeaned_variables(self):
+        (y_within, hdd_within, cdd_within), means = (
+            self.model.demeaned_variables())
+        assert y_within.shape == (8712, 100)
+        assert hdd_within.shape == (8712, 100)
+        assert cdd_within.shape == (8712, 100)
+        y_m, y_d, y_h = means.y_means
+        assert y_m.shape == (12, 100)
+        assert y_d.shape == (7, 100)
+        assert y_h.shape == (24, 100)
+        assert_array_almost_equal(y_d.mean(axis=0), np.zeros(100))
+        assert_array_almost_equal(y_h.mean(axis=0), np.zeros(100))
+
     def test_estimation_results(self):
-        alpha_m, beta, seasonal = self.model.fit()
-        assert alpha_m.shape == (12,)
+        beta, means = self.model.fit()
         assert beta.shape == (2,)
-        assert seasonal['Hy0'].shape == (24, 100)
-        assert seasonal['Dy0'].shape == (7, 100)
-        summary = self.model.print_coeffs_and_forecast_metrics(
-            beta=beta,
-            alpha_m=alpha_m,
-            Hy0=seasonal['Hy0'],
-            Dy0=seasonal['Dy0'],
-            label="IndividualSeasonalUncorrelatedErrors",
-        )
+        summary = self.model.summary(
+            beta, means,
+            "IndividualMDHUncorrelatedErrors")
         self.assertEqualToCached(
             {'Summary': summary},
-            'individual_seasonal_uncorrelated_errors_summary')
+            'individual_mdh_uncorrelated_errors_summary')
+
