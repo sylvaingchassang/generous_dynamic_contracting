@@ -18,15 +18,6 @@ class ConsumptionModel(ABC):
         self.CDDv = cooling_degree_days.to_numpy(dtype=np.float32, copy=False)
 
         self.m_idx, self.dow, self.hod = self._get_m_d_h(y.index)
-        # self.month = y.index.month.values  # (nT,)
-        # self.m_idx = self.month - 1  # 0..11
-        # self.nT, self.nI = y.shape
-        # self.months = np.arange(12)
-        #
-        # self.n_dates, self.n_cons = self.Yv.shape
-        # idx = np.arange(self.n_dates)
-        # self.hod = idx % 24  # 0..23  # directly get hour of day
-        # self.dow = (idx // 24) % 7  # directly get day of week 0..6
 
     def _get_m_d_h(self, index: pd.DatetimeIndex):
         m_idx = index.month.values -1 # 0..11

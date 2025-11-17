@@ -1,4 +1,6 @@
 import numpy as np
+import json
+import pandas as pd
 from numpy.testing import assert_array_almost_equal
 from gdc.tests.testutils import CachedTestCase
 from gdc.estimation.consumption import (
@@ -38,6 +40,52 @@ class TestPooledSeasonalUncorrelatedErrors(CachedTestCase):
             {'Summary': summary},
             'pooled_mdh_uncorrelated_errors_summary',
             delta=1e-6
+        )
+
+    def test_predict_static_means_out_of_sample(self):
+        beta, means = self.model.fit()
+        np.random.seed(42)
+
+        original_temp_data = df_temp_simulated_normalized
+        original_index = original_temp_data.index
+
+        selected_row_indices = np.random.choice(
+            len(original_index), size=100, replace=False)
+        out_of_sample_datetime_index = original_index[
+            selected_row_indices].sort_values()
+
+
+        hdd_values = self.model.HDDv[selected_row_indices, :20]  # shape: (
+        # 100, 20)
+        cdd_values = self.model.CDDv[selected_row_indices, :20]  # shape: (
+        # 100, 20)
+
+        # Create DataFrames with datetime index and consumer columns
+        n_consumers = hdd_values.shape[1]
+        consumer_columns = [f'consumer_{i}' for i in range(n_consumers)]
+
+        hdd_out_of_sample = pd.DataFrame(
+            hdd_values,
+            index=out_of_sample_datetime_index,
+            columns=consumer_columns
+        )
+        cdd_out_of_sample = pd.DataFrame(
+            cdd_values,
+            index=out_of_sample_datetime_index,
+            columns=consumer_columns
+        )
+
+        # Get predictions using the out-of-sample data
+        predictions = self.model.predict_static_means(
+            beta, means,
+            hddv=hdd_out_of_sample,
+            cddv=cdd_out_of_sample
+        )
+
+        self.assertAlmostEqualToCached(
+            predictions.to_json(),
+            'pooled_predict_static_means_out_of_sample',
+            delta=1e-8
         )
 
 
