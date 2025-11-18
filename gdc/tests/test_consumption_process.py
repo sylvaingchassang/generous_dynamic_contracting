@@ -35,7 +35,7 @@ class TestPooledSeasonalUncorrelatedErrors(CachedTestCase):
         assert beta.shape == (2,)
         summary = self.model.summary(
             beta, means,
-            "PooledMDHUncorrelatedErrors")
+            label="PooledMDHUncorrelatedErrors")
         self.assertAlmostEqualToCached(
             {'Summary': summary},
             'pooled_mdh_uncorrelated_errors_summary',
@@ -115,12 +115,36 @@ class TestIndividualSeasonalUncorrelatedErrors(CachedTestCase):
         assert beta.shape == (2,)
         summary = self.model.summary(
             beta, means,
-            "IndividualMDHUncorrelatedErrors")
+            label="IndividualMDHUncorrelatedErrors")
         self.assertAlmostEqualToCached(
             {'Summary': summary},
             'individual_mdh_uncorrelated_errors_summary',
             delta=1e-6
         )
+
+    def test_pool_ar1_dynamic_resids(self):
+        beta, means = self.model.fit()
+        error_ar1 = ARErrorModel(
+            self.model.static_resids(beta, means), lags=(1,))
+        error_ar1_res = error_ar1.fit()
+        summary = self.model.summary(
+            beta, means, error_model_=error_ar1_res,
+            label="IndividualMDH with AR(1) errors")
+        self.assertAlmostEqualToCached(
+            {'Summary': summary},
+            'individual_mdh_ar1_errors_summary', delta=1e-6)
+
+    def test_pool_ar1_24_dynamic_resids(self):
+        beta, means = self.model.fit()
+        error_ar1_24 = ARErrorModel(
+            self.model.static_resids(beta, means), lags=(1, 24))
+        error_ar1_24_res = error_ar1_24.fit()
+        summary = self.model.summary(
+            beta, means, error_model_=error_ar1_24_res,
+            label="IndividualMDH with AR(1, 24) errors")
+        self.assertAlmostEqualToCached(
+            {'Summary': summary},
+            'individual_mdh_ar1_24_errors_summary', delta=1e-6)
 
 
 def simulate_ar3_resids(T, N, coeffs, sigma=1.0, seed=78):

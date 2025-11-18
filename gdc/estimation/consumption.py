@@ -90,7 +90,22 @@ class ConsumptionModel(ABC):
         resids = self.Yv - self.predict_static_means(beta, means)
         return resids
 
-    def summary(self, beta, means, label="Model"):
+    def predict_dynamic_means(self, beta, means, error_model_):
+        mu = self.predict_static_means(beta, means)
+        yhat_dyn = mu.copy()
+        phi_ = error_model_.coeffs
+        max_lag = error_model_.lags.max()
+        for lag, phi_lag in zip(error_model_.lags, phi_):
+            yhat_dyn[max_lag:, :] += phi_lag * (
+                self.Yv[max_lag - lag:-lag, :] - mu[max_lag - lag:-lag, :])
+        return yhat_dyn
+
+    def dynamic_resids(self, beta, means, error_model_):
+        yhat_dyn = self.predict_dynamic_means(beta, means, error_model_)
+        resids_d = self.Yv - yhat_dyn
+        return resids_d
+
+    def summary(self, beta, means, error_model_=None, label="Model"):
 
         static_resids = self.static_resids(beta, means)
         static_sse = float(np.sum(static_resids ** 2))
@@ -108,26 +123,17 @@ class ConsumptionModel(ABC):
             }
         }
 
-        # --- dynamic one-step fit (if rho provided) ---
-        # if rho is not None:
-        #     yhat_dyn = mu.copy()
-        #     yhat_dyn[1:, :] += rho * (Yv[:-1, :] - mu[:-1, :])
-        #     resid_d = Yv - yhat_dyn
-        #     sse_d = float(np.sum(resid_d ** 2))
-        #     r2_d = 1.0 - sse_d / sst
-        #     rmse_d = float(np.sqrt(sse_d / Yv.size))
-        # else:
-        #     r2_d = rmse_d = None
-
-        # --- return summary as dict ---
-        #
-        #
-        # if rho is not None:
-        #     summary["dynamic_fit"] = {
-        #         "rho": float(rho),
-        #         "r2": float(r2_d),
-        #         "rmse": float(rmse_d)
-        #     }
+        if error_model_ is not None:
+            dynamic_resids = self.dynamic_resids(beta, means, error_model_)
+            dynamic_sse = float(np.sum(dynamic_resids ** 2))
+            r2_d = 1.0 - dynamic_sse / sst
+            rmse_d = float(np.sqrt(dynamic_sse / self.Yv.size))
+            summary["dynamic_fit"] = {
+                "lags": error_model_.lags.tolist(),
+                "coeffs": error_model_.coeffs.tolist(),
+                "r2": float(r2_d),
+                "rmse": float(rmse_d)
+            }
 
         return summary
 
@@ -256,4 +262,5 @@ class ARErrorModel:
             innovs_, num_quantiles=num_quantiles)
         self._check_stationarity(phi_)
         return ExtendedNamespace(
-            coeffs=phi_, sigma2=sigma2_, sample_innov=innov_rv_)
+            lags=self.lags, coeffs=phi_, sigma2=sigma2_,
+            sample_innov=innov_rv_)
