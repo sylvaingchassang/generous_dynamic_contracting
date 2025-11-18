@@ -4,7 +4,7 @@ import pandas as pd
 from numpy.testing import assert_array_almost_equal
 from gdc.tests.testutils import CachedTestCase
 from gdc.estimation.consumption import (
-    PooledMDHUncorrelatedErrors, IndividualMDHUncorrelatedErrors)
+    PooledMDHUncorrelatedErrors, IndividualMDHUncorrelatedErrors, ARErrorModel)
 from gdc.data_access import (
     df_load_simulated_normalized, df_temp_simulated_normalized)
 
@@ -122,3 +122,36 @@ class TestIndividualSeasonalUncorrelatedErrors(CachedTestCase):
             delta=1e-6
         )
 
+
+def simulate_ar3_resids(T, N, coeffs, sigma=1.0, seed=78):
+    np.random.seed(seed)
+    resids = np.zeros((T, N))
+    for n in range(N):
+        eps = np.random.normal(0, sigma, T)
+        for t in range(3, T):
+            resids[t, n] = (coeffs[0] * resids[t-1, n] +
+                            coeffs[1] * resids[t-2, n] +
+                            coeffs[2] * resids[t-3, n] +
+                            eps[t])
+    return resids
+
+def test_arerror_model_ar3_stats():
+    T, N = 500, 10
+    true_coeffs = [26/24, -9/24, 1/24]
+    true_sigma2 = 1.0
+    resids = simulate_ar3_resids(T, N, true_coeffs, sigma=true_sigma2)
+    model = ARErrorModel(resids, lags=(1,2,3))
+    fit_result = model.fit()
+    est_coeffs = fit_result.coeffs
+    est_sigma2 = fit_result.sigma2
+    sample_innov = fit_result.sample_innov
+
+    # Coefficients
+    assert np.allclose(est_coeffs, true_coeffs, atol=0.05)
+    # Stationarity
+    assert model._check_stationarity(est_coeffs)
+    # sigma2
+    assert np.isclose(est_sigma2, true_sigma2, atol=0.05)
+    # Sample distribution stats
+    assert np.isclose(sample_innov.expectation(), 0, atol=0.05)
+    assert np.isclose(sample_innov.std(), np.sqrt(true_sigma2), atol=0.1)

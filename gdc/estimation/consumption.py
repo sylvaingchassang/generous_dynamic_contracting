@@ -2,10 +2,12 @@ import numpy as np
 import pandas as pd
 from scipy import optimize, special
 from abc import ABC, abstractmethod
+import warnings
 
 from gdc.data_access import (df_temp_simulated_normalized,
                              df_load_simulated_normalized)
 from gdc.utils import ExtendedNamespace
+from gdc.estimation.random_variables import RandomVariable
 
 
 class ConsumptionModel(ABC):
@@ -191,11 +193,6 @@ class ARErrorModel:
         self.resids = np.asarray(resids)
         self.lags = np.array(lags, dtype=int)
 
-        self.phi_ = None
-        self.sigma2_ = None
-        self.nu_ = None
-        self.dist_ = None
-
     # ------------------------------------------------------------
     # Build flattened y and X by stacking consumers vertically
     # ------------------------------------------------------------
@@ -218,104 +215,45 @@ class ARErrorModel:
         ok = ~np.isnan(y) & ~np.isnan(x).any(axis=1)
         return y[ok], x[ok, :]
 
-    # ------------------------------------------------------------
-    # Gaussian estimation (closed form)
-    # ------------------------------------------------------------
-    def _estimate_normal(self, y, x):
-        beta, *_ = np.linalg.lstsq(x, y, rcond=None)
-        eps = y - x @ beta
-        sigma = np.sqrt((eps @ eps) / len(eps))
-        return beta, sigma
+    def _estimate_coeffs(self, y, x):
+        phi_, *_ = np.linalg.lstsq(x, y, rcond=None)
+        innovs_ = y - x @ phi_
+        return phi_, innovs_
 
-    # ------------------------------------------------------------
-    # Student-t estimation (MLE)
-    # ------------------------------------------------------------
-    def _estimate_student(self, y, x, nu_init):
-        n, k = x.shape
+    def _estimate_gaussian_innovations(self, innovs_):
+        sigma2 = (innovs_ @ innovs_) / len(innovs_)
+        return sigma2
 
-        # OLS initialization
-        beta0, *_ = np.linalg.lstsq(x, y, rcond=None)
-        eps0 = y - x @ beta0
-        sigma20 = (eps0 @ eps0) / n
-        nu0 = nu_init
+    def _estimate_sample_dist(self, innovs_, num_quantiles=100):
 
-        # parameter vector: [beta_k, log_sigma2, log(nu-2)]
-        theta0 = np.concatenate([
-            beta0,
-            [np.log(sigma20)],
-            [np.log(max(nu0 - 2, 1e-3))]
-        ])
+        sorted_innovs = np.sort(innovs_)
+        quantiles = np.linspace(1./num_quantiles,
+                                1 - 1./num_quantiles,
+                                num_quantiles)
+        values = np.quantile(sorted_innovs, quantiles)
+        innov_rv = RandomVariable(quantiles, values)
+        return innov_rv
 
-        def neg_loglik(theta):
-            beta = theta[:k]
-            sigma2 = np.exp(theta[k])
-            nu = 2.0 + np.exp(theta[k + 1])
-
-            eps = y - x @ beta
-            z = eps**2 / (nu * sigma2)
-
-            c = (special.gammaln((nu + 1) / 2)
-                 - special.gammaln(nu / 2)
-                 - 0.5 * np.log(nu * np.pi * sigma2))
-
-            ll = n * c - 0.5 * (nu + 1) * np.sum(np.log1p(z))
-            return -ll
-
-        res = optimize.minimize(neg_loglik, theta0, method="L-BFGS-B")
-        if not res.success:
-            raise RuntimeError("Student-t optimization did not converge")
-
-        theta = res.x
-        beta = theta[:k]
-        sigma2 = np.exp(theta[k])
-        nu = 2.0 + np.exp(theta[k + 1])
-
-        return beta, sigma2, nu
-
-    # ------------------------------------------------------------
-    # Public method
-    # ------------------------------------------------------------
-    def estimate_rhos(self, dist="normal", nu_init=8.0):
-        y, X = self._build_yX()
-        y = y - y.mean()
-
-        if dist == "normal":
-            beta, sigma2 = self._estimate_normal(y, X)
-            self.phi_ = beta
-            self.sigma2_ = sigma2
-            self.nu_ = None
-            self.dist_ = "normal"
-
-        elif dist == "student":
-            beta, sigma2, nu = self._estimate_student(y, X, nu_init)
-            self.phi_ = beta
-            self.sigma2_ = sigma2
-            self.nu_ = nu
-            self.dist_ = "student"
-
-        else:
-            raise ValueError("dist must be 'normal' or 'student'")
-
-        return {
-            "phi": self.phi_,
-            "sigma2": self.sigma2_,
-            "nu": self.nu_,
-            "dist": self.dist_
-        }
-
-    # ------------------------------------------------------------
-    # Stationarity check
-    # ------------------------------------------------------------
-    def check_stationarity(self):
-        if self.phi_ is None:
-            raise RuntimeError("Call estimate_rhos first")
-
+    def _check_stationarity(self, phi_):
         Lmax = self.lags.max()
         coeffs = np.zeros(Lmax)
-        for lag, phi in zip(self.lags, self.phi_):
+        for lag, phi in zip(self.lags, phi_):
             coeffs[lag - 1] = phi
 
         # Polynomial: 1 - φ₁ z - ... - φ_p zᵖ
-        poly = np.concatenate(([1.0], -coeffs))
+        poly = np.flip(np.concatenate(([1.0], -coeffs)))
         roots = np.roots(poly)
-        return np.all(np.abs(roots) > 1), roots
+        is_stationary = np.all(np.abs(roots) > 1)
+        if not is_stationary:
+            warnings.warn("Error Process is NOT Stationary")
+        return is_stationary
+
+    def fit(self, num_quantiles=100):
+        y, x = self._build_yx()
+        phi_, innovs_ = self._estimate_coeffs(y, x)
+        sigma2_ = self._estimate_gaussian_innovations(innovs_)
+        innov_rv_ = self._estimate_sample_dist(
+            innovs_, num_quantiles=num_quantiles)
+        self._check_stationarity(phi_)
+        return ExtendedNamespace(
+            coeffs=phi_, sigma2=sigma2_, sample_innov=innov_rv_)
