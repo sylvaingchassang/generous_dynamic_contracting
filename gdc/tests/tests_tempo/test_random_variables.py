@@ -1,5 +1,5 @@
 from gdc.tests.testutils import CachedTestCase
-from gdc.estimation.random_variables import RandomVariable
+from gdc.tempo.estimation.random_variables import RandomVariable
 import numpy as np
 
 

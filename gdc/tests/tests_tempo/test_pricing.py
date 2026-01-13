@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
-from gdc.pricing import (get_base_price,
-                         compute_simulated_base_variable_profit_ht,
-                         predicted_moments)
+from gdc.tempo.pricing import (get_base_price,
+                               compute_simulated_base_variable_profit_ht,
+                               predicted_moments)
 from gdc.tests.testutils import CachedTestCase
-from gdc.data_access import (df_load_simulated_normalized, df_hourly_prices,
-                             get_subscribers, df_temp_simulated_normalized)
+from gdc.tempo.data_access import (df_load_simulated_normalized, df_hourly_prices,
+                                   get_subscribers, df_temp_simulated_normalized)
 
 
 class TestGetBasePrice(CachedTestCase):

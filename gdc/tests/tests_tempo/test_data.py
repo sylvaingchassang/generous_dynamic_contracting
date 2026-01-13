@@ -1,10 +1,7 @@
-import pytest
 import pandas as pd
-import xarray as xr
 import numpy as np
-import unittest
 
-from gdc.data_access import (
+from gdc.tempo.data_access import (
     df_temp_simulated,
     df_temp_real,
     df_temp_simulated_normalized,
@@ -207,6 +204,6 @@ class TestDataframeStatistics(CachedTestCase):
 
 
 def test_offset():
-    from gdc.data_access import offset
+    from gdc.tempo.data_access import offset
     assert offset == -2160
     

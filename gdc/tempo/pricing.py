@@ -1,10 +1,9 @@
 import pandas as pd
 from os import path
 from datetime import datetime, date
-import numpy as np
 import statsmodels.api as sm
 
-from gdc.data_access import GDC_DATA_PATH
+from gdc.tempo.data_access import GDC_DATA_PATH
 
 
 def _load_base_tariff_df():

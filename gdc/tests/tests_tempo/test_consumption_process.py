@@ -1,11 +1,10 @@
 import numpy as np
-import json
 import pandas as pd
 from numpy.testing import assert_array_almost_equal
 from gdc.tests.testutils import CachedTestCase
-from gdc.estimation.consumption import (
+from gdc.tempo.estimation.consumption import (
     PooledMDHUncorrelatedErrors, IndividualMDHUncorrelatedErrors, ARErrorModel)
-from gdc.data_access import (
+from gdc.tempo.data_access import (
     df_load_simulated_normalized, df_temp_simulated_normalized)
 
 

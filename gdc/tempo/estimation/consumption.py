@@ -1,13 +1,12 @@
 import numpy as np
 import pandas as pd
-from scipy import optimize, special
 from abc import ABC, abstractmethod
 import warnings
 
-from gdc.data_access import (df_temp_simulated_normalized,
-                             df_load_simulated_normalized)
+from gdc.tempo.data_access import (df_temp_simulated_normalized,
+                                   df_load_simulated_normalized)
 from gdc.utils import ExtendedNamespace
-from gdc.estimation.random_variables import RandomVariable
+from gdc.tempo.estimation.random_variables import RandomVariable
 
 
 class ConsumptionModel(ABC):
