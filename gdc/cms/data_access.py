@@ -86,9 +86,12 @@ df_beneficiaries_2008 = next(zip_chunk_generator(ZF.DE1_0_2008_Beneficiary_Summa
 df_beneficiaries_2009 = next(zip_chunk_generator(ZF.DE1_0_2009_Beneficiary_Summary_File_Sample_1))
 df_beneficiaries_2010 = next(zip_chunk_generator(ZF.DE1_0_2010_Beneficiary_Summary_File_Sample_1))
 
-df_beneficiaries_2008['Year'] = 2008
-df_beneficiaries_2009['Year'] = 2009
-df_beneficiaries_2010['Year'] = 2010
+list_df_beneficiaries = [df_beneficiaries_2008,
+                         df_beneficiaries_2009,
+                         df_beneficiaries_2010]
+
+for df, y in zip(list_df_beneficiaries, [2008, 2009, 2010]):
+    df['Year'] = y
 
 
 def load_codebook():
