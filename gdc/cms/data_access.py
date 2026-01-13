@@ -100,3 +100,48 @@ def load_codebook():
     mapping = dict(zip(df["variable"], df["name"]))
     return ExtendedNamespace(**mapping)
 
+
+def age_in_years(bdate_yyyymmdd: int, ref_year: int) -> int:
+    y = bdate_yyyymmdd // 10_000
+    m = (bdate_yyyymmdd // 100) % 100
+
+    return (ref_year - y) - (m - 1) / 12
+
+
+CB = load_codebook()
+
+for df in list_df_beneficiaries:
+    df['age'] = df[['Year', CB.date_birth]].apply(
+        lambda r: age_in_years(
+            r[CB.date_birth], r['Year']), axis=1)
+
+
+binary_characteristics = [
+    c for c in CB.__dict__.keys() if c.startswith('cc')]
+
+medicare_payment = [CB.medicare_reimb_car, CB.medicare_reimb_ip, CB.medicare_reimb_op]
+
+numerical = ['months_partA', 'months_partB', 'months_hmo',
+             'months_partD']
+
+cat_cols = [CB[c] for c in binary_characteristics] + [
+    CB.sex]
+
+list_df_beneficiaries_w_dummies = []
+
+for df in list_df_beneficiaries:
+    df_w_dummies = df.copy()
+    df_w_dummies = pd.get_dummies(
+        df_w_dummies,
+        columns=cat_cols,
+        drop_first=True,
+        dtype=float
+    )
+    df_w_dummies.set_index(CB.patient_id, inplace=True)
+    df_w_dummies['payments'] = df_w_dummies[medicare_payment].sum(axis=1)
+    list_df_beneficiaries_w_dummies.append(df_w_dummies)
+
+df_beneficiaries_2008_w_dummies = list_df_beneficiaries_w_dummies[0]
+df_beneficiaries_2009_w_dummies = list_df_beneficiaries_w_dummies[1]
+df_beneficiaries_2010_w_dummies = list_df_beneficiaries_w_dummies[2]
+
