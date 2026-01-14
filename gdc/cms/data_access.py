@@ -145,3 +145,42 @@ df_beneficiaries_2008_w_dummies = list_df_beneficiaries_w_dummies[0]
 df_beneficiaries_2009_w_dummies = list_df_beneficiaries_w_dummies[1]
 df_beneficiaries_2010_w_dummies = list_df_beneficiaries_w_dummies[2]
 
+
+cols_to_drop = ['payments', 'Year', CB.beneficiary_resp_car, CB.beneficiary_resp_ip, CB.beneficiary_resp_op,
+                CB.medicare_reimb_car, CB.medicare_reimb_ip, CB.medicare_reimb_op, CB.county_code,
+                CB.date_birth, CB.date_death, CB.race, CB.state_code, CB.primary_payer_car, CB.primary_payer_ip, CB.primary_payer_op,
+               CB.months_hmo, CB.months_partA, CB.months_partB]
+
+
+def keep_cols_except_age(df):
+    return [c for c in df.columns if c not in cols_to_drop and c != 'age']
+
+
+def get_y_x():
+    dic_out = {}
+    y2008 = df_beneficiaries_2008_w_dummies['payments']
+    x2008 = df_beneficiaries_2008_w_dummies.drop(columns=cols_to_drop)
+    dic_out['year_2008'] = ExtendedNamespace(Y=y2008, X=x2008)
+
+    y2009 = df_beneficiaries_2009_w_dummies['payments']
+    x2009 = df_beneficiaries_2009_w_dummies.drop(columns=cols_to_drop)
+    # concatenate x2008[ref_cols] -- add L to eac col label
+    ref_cols = keep_cols_except_age(x2008)
+    x2008_L = x2008[ref_cols].copy()
+    x2008_L.columns = [f"{c}_L" for c in x2008_L.columns]
+    x2009 = pd.concat([x2009, x2008_L], axis=1)
+    dic_out['year_2009'] = ExtendedNamespace(Y=y2009, X=x2009)
+
+    y2010 = df_beneficiaries_2010_w_dummies['payments']
+    x2010 = df_beneficiaries_2010_w_dummies.drop(columns=cols_to_drop)
+    # concatenate x2009[ref_cols] -- add L to eac col label
+    ref_cols = keep_cols_except_age(x2009)
+    x2009_L = x2009[ref_cols].copy()
+    x2009_L.columns = [f"{c}_L" for c in x2009_L.columns]
+    x2010 = pd.concat([x2010, x2009_L], axis=1)
+    dic_out['year_2010'] = ExtendedNamespace(Y=y2010, X=x2010)
+
+    return ExtendedNamespace(**dic_out)
+
+
+yx_by = get_y_x()
