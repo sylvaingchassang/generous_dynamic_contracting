@@ -154,9 +154,9 @@ common_patients = list(common_patients)
 
 # get payments for common patients only, append year to payment col
 df_merged_payments = pd.DataFrame({
-    'payments_2008': df_beneficiaries_2008_w_dummies.loc[common_patients, 'payments'],
-    'payments_2009': df_beneficiaries_2009_w_dummies.loc[common_patients, 'payments'],
-    'payments_2010': df_beneficiaries_2010_w_dummies.loc[common_patients, 'payments'],
+    'payments_2008': df_beneficiaries_2008_w_dummies['payments'],
+    'payments_2009': df_beneficiaries_2009_w_dummies['payments'],
+    'payments_2010': df_beneficiaries_2010_w_dummies['payments'],
 })
 
 cols_to_drop = ['payments', 'Year', CB.beneficiary_resp_car, CB.beneficiary_resp_ip, CB.beneficiary_resp_op,
@@ -167,13 +167,13 @@ cols_to_drop = ['payments', 'Year', CB.beneficiary_resp_car, CB.beneficiary_resp
 # get other characteristics for common patients, append year to col names,
 # merge into df_merged_covariates
 for year, df in zip([2008, 2009, 2010], list_df_beneficiaries_w_dummies):
-    df_common = df.loc[common_patients].copy()
+    df_common = df.copy()
     df_common = df_common.drop(columns=cols_to_drop)
     df_common.columns = [f"{c}_{year}" for c in df_common.columns]
     if year == 2008:
         df_merged_covariates = df_common
     else:
-        df_merged_covariates = df_merged_covariates.join(df_common, how='left')
+        df_merged_covariates = df_merged_covariates.join(df_common, how='outer')
 
 
 def keep_cols_except_age(df):
