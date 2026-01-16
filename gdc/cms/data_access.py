@@ -3,7 +3,6 @@ import zipfile
 import io
 import csv
 import pandas as pd
-import statsmodels.api as sm
 
 
 from gdc.utils import data_path, ExtendedNamespace
@@ -192,7 +191,7 @@ def get_y_x():
     ref_cols = keep_cols_except_age(x2008)
     x2008_L = x2008[ref_cols].copy()
     x2008_L.columns = [f"{c}_L" for c in x2008_L.columns]
-    #x2009 = x2009.join(x2008_L, how='left')
+    x2009 = x2009.join(x2008_L, how='left')
     dic_out['year_2009'] = ExtendedNamespace(Y=y2009, X=x2009)
 
     y2010 = df_beneficiaries_2010_w_dummies['payments']
@@ -201,7 +200,7 @@ def get_y_x():
     ref_cols = keep_cols_except_age(x2009)
     x2009_L = x2009[ref_cols].copy()
     x2009_L.columns = [f"{c}_L" for c in x2009_L.columns]
-    #x2010 = x2010.join(x2009_L, how='left')
+    x2010 = x2010.join(x2009_L, how='left')
     dic_out['year_2010'] = ExtendedNamespace(Y=y2010, X=x2010)
 
     return ExtendedNamespace(**dic_out)
@@ -209,20 +208,5 @@ def get_y_x():
 
 yx_by = get_y_x()
 
-
-def get_resids():
-    dic_resids = {}
-    dic_res = {}
-    for year in ['year_2008', 'year_2009', 'year_2010']:
-        y = yx_by[year].Y
-        X = yx_by[year].X
-        X = sm.add_constant(X)
-        model = sm.OLS(y, X, missing='drop')
-        res = model.fit()
-        dic_resids[year] = res.resid
-        dic_res[year] = res
-    return dic_resids, dic_res
-
-dic_resids, dic_res = get_resids()
-
-df_resids = pd.DataFrame(dic_resids)
+def relevant_cols(kw, df=df_merged_covariates):
+    return [c for c in df.columns if c.find(kw) > -1]
